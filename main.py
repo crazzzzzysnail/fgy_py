@@ -146,8 +146,15 @@ def main():
     if not any_task_failed and current_run_successful_tasks > 0:
         total_successful_days += current_run_successful_tasks
         save_status(total_successful_days)
+        
+        total_reward_days = 3 * total_successful_days
+        total_reward_minutes = 65 * total_successful_days
+        hours, minutes = divmod(total_reward_minutes, 60)
+        total_reward_time = f"{hours}小时{minutes}分钟"
+
         logger.info("************************************************")
-        logger.info(f"*************** 获得3天VIP，65分钟时长，成功签到{total_successful_days}天 ***************")
+        logger.info("*************** 获得3天VIP，65分钟时长 ***************")
+        logger.info(f"*** 成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***")
         logger.info("************************************************")
     elif any_task_failed:
         logger.warning("一个或多个任务执行失败或未完全成功，请检查以上日志获取详细信息。")
