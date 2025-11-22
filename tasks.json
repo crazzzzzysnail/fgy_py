@@ -1,0 +1,32 @@
+[
+  {
+    "name": "签到奖励",
+    "har_file": "har/reward.har",
+    "count": 50,
+    "interval_seconds": 30
+  },
+  {
+    "name": "奖励任务1",
+    "har_file": "har/task1.har",
+    "count": 1,
+    "interval_seconds": 0
+  },
+  {
+    "name": "奖励任务3",
+    "har_file": "har/task3.har",
+    "count": 3,
+    "interval_seconds": 30
+  },
+  {
+    "name": "奖励任务5",
+    "har_file": "har/task5.har",
+    "count": 5,
+    "interval_seconds": 30
+  },
+  {
+    "name": "奖励任务10",
+    "har_file": "har/task10.har",
+    "count": 10,
+    "interval_seconds": 30
+  }
+]
