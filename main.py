@@ -162,7 +162,7 @@ def main():
     else:
         logger.info("本次运行没有成功完成任何任务。")
         #调用青龙面板notify()发送wxpusher通知
-        #QLAPI.notify("签到任务", "成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***")
+        #print(QLAPI.notify("签到任务", "成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***"))
 
 
     logger.info(f"================ 自动化任务结束 (总耗时: {total_duration:.2f} 秒) ================")
