@@ -55,6 +55,15 @@ def save_status(successful_days):
         json.dump({'successful_days': successful_days}, f, indent=4)
 
 
+def format_duration(seconds):
+    """将秒数格式化为 'X分Y秒' 或 'Y.YY秒'。"""
+    if seconds >= 60:
+        minutes, sec = divmod(int(seconds), 60)
+        return f"{minutes}分{sec}秒"
+    else:
+        return f"{seconds:.2f}秒"
+
+
 def run_task(task):
     """
     执行单个任务，此函数将在单独的线程中运行。
@@ -101,7 +110,7 @@ def run_task(task):
             time.sleep(interval)
     
     duration = time.time() - task_start_time
-    logger.info(f"--- [线程结束] 任务: {task_name} 执行完毕, 耗时: {duration:.2f} 秒 ---")
+    logger.info(f"--- [线程结束] 任务: {task_name} 执行完毕, 耗时: {format_duration(duration)} ---")
     return task_fully_successful
 
 
@@ -141,10 +150,10 @@ def main():
                 logger.error(f"任务 '{task.get('name')}' 在执行期间产生异常: {exc}", exc_info=DEBUG_MODE)
 
     total_duration = time.time() - overall_start_time
-    logger.info(f"所有发送任务已完成。总耗时: {total_duration:.2f} 秒")
+    logger.info(f"所有发送任务已完成。总耗时: {format_duration(total_duration)}")
 
     if not any_task_failed and current_run_successful_tasks > 0:
-        total_successful_days += current_run_successful_tasks
+        total_successful_days += 1
         save_status(total_successful_days)
         
         total_reward_days = 3 * total_successful_days
@@ -165,7 +174,7 @@ def main():
         #print(QLAPI.notify("签到任务", "成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***"))
 
 
-    logger.info(f"================ 自动化任务结束 (总耗时: {total_duration:.2f} 秒) ================")
+    logger.info(f"================ 自动化任务结束 (总耗时: {format_duration(total_duration)}) ================")
 
 
 
