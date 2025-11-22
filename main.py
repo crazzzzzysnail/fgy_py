@@ -2,9 +2,16 @@ import json
 import time
 import os
 import concurrent.futures
-from logger_setup import logger
+from logger_setup import setup_logger
 from har_parser import parse_har
 from request_sender import send_request
+
+# --- 全局配置 ---
+# 是否开启调试模式。True: 记录详细请求和响应信息; False: 只记录基本信息。
+DEBUG_MODE = True
+
+# 初始化日志系统
+logger = setup_logger(debug=DEBUG_MODE)
 
 # 脚本根目录，用于构建绝对路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +57,6 @@ def run_task(task):
         logger.info(f"任务 '{task_name}': 正在进行第 {i + 1}/{count} 次发送。")
         send_request(request_details)
         
-        # 如果不是最后一次发送，并且设置了间隔时间，则等待
         if i < count - 1 and interval > 0:
             logger.info(f"任务 '{task_name}': 等待 {interval} 秒...")
             time.sleep(interval)
@@ -62,26 +68,22 @@ def main():
     """
     脚本主入口函数，使用线程池并行执行任务。
     """
-    logger.info("================ 自动化任务开始 (多线程模式) ================")
+    logger.info(f"================ 自动化任务开始 (多线程模式) ================")
     tasks = load_tasks()
     
     if not tasks:
         logger.warning("没有加载到任何任务，脚本退出。")
         return
 
-    # 使用ThreadPoolExecutor来并行执行所有任务
-    # max_workers可以根据需要调整，None表示默认值（通常是CPU核心数*5）
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-        # 提交所有任务到线程池
         future_to_task = {executor.submit(run_task, task): task for task in tasks}
         
-        # 等待所有任务完成
         for future in concurrent.futures.as_completed(future_to_task):
             task = future_to_task[future]
             try:
-                future.result()  # 获取任务结果，如果任务中发生异常，这里会重新抛出
+                future.result()
             except Exception as exc:
-                logger.error(f"任务 '{task.get('name')}' 在执行期间产生异常: {exc}")
+                logger.error(f"任务 '{task.get('name')}' 在执行期间产生异常: {exc}", exc_info=DEBUG_MODE)
 
     logger.info("所有发送任务已完成。")
     logger.info("************************************************")

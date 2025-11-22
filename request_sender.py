@@ -1,6 +1,10 @@
-import requests
 import time
-from logger_setup import logger
+import logging
+import json
+import http.client
+from urllib.parse import urlparse
+
+logger = logging.getLogger('CheckinTask')
 
 def send_request(request_details):
     """
@@ -14,36 +18,50 @@ def send_request(request_details):
     headers = request_details['headers']
     data = request_details['post_data']
 
-    try:
-        # 根据请求方法发送请求
-        if method == 'POST':
-            if isinstance(data, dict):
-                response = requests.post(url, headers=headers, json=data, timeout=10)
-            else:
-                response = requests.post(url, headers=headers, data=data, timeout=10)
-        elif method == 'GET':
-            response = requests.get(url, headers=headers, timeout=10)
-        else:
-            logger.error(f"不支持的HTTP方法: {method}")
-            return False
+    parsed_url = urlparse(url)
+    host = parsed_url.netloc
+    path = parsed_url.path
+    if parsed_url.query:
+        path += '?' + parsed_url.query
 
-        # 检查响应状态码
-        if response.status_code == 200:
-            logger.info(f"请求成功: {method} {url} - 状态码: {response.status_code}")
-            # 尝试打印JSON响应，如果失败则打印文本
+    try:
+        logger.debug(f"准备发送请求: {method} {url}")
+        logger.debug(f"请求头: {json.dumps(headers, indent=2)}")
+        if data:
+            if isinstance(data, bytes):
+                log_data = f"二进制数据, 长度: {len(data)} bytes"
+            else:
+                try:
+                    log_data = json.dumps(data, indent=2, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    log_data = str(data)
+            logger.debug(f"请求体: \n{log_data}")
+
+        conn = http.client.HTTPSConnection(host)
+        conn.request(method, path, body=data, headers=headers)
+        resp = conn.getresponse()
+
+        logger.debug(f"收到响应: 状态码 {resp.status}")
+        logger.debug(f"响应头: {json.dumps(dict(resp.getheaders()), indent=2)}")
+
+        if resp.status == 200:
+            logger.info(f"请求成功: {method} {url} - 状态码: {resp.status}")
+            response_body = resp.read()
             try:
-                logger.info(f"响应内容: {response.json()}")
-            except ValueError:
-                logger.info(f"响应内容 (非JSON): {response.text[:200]}...") # 避免日志过长
+                response_json = json.loads(response_body)
+                logger.debug(f"响应内容 (JSON): \n{json.dumps(response_json, indent=2, ensure_ascii=False)}")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                logger.debug(f"响应内容 (原始): {response_body}")
+                logger.info(f"响应内容 (预览): {response_body[:100]}...")
             return True
         else:
-            logger.warning(f"请求失败: {method} {url} - 状态码: {response.status_code}")
-            logger.warning(f"响应内容: {response.text}")
+            logger.warning(f"请求失败: {method} {url} - 状态码: {resp.status}")
+            logger.warning(f"响应内容: {resp.read()}")
             return False
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"发送请求时发生网络错误: {method} {url} - 错误: {e}")
-        return False
     except Exception as e:
-        logger.error(f"发送请求时发生未知错误: {method} {url} - 错误: {e}")
+        logger.error(f"发送请求时发生错误: {method} {url} - 错误: {e}", exc_info=True)
         return False
+    finally:
+        if 'conn' in locals():
+            conn.close()

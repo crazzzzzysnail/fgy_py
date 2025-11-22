@@ -1,5 +1,8 @@
 import json
-from logger_setup import logger
+import logging
+import base64
+
+logger = logging.getLogger('CheckinTask')
 
 def parse_har(har_file_path):
     """
@@ -12,47 +15,58 @@ def parse_har(har_file_path):
         with open(har_file_path, 'r', encoding='utf-8') as f:
             har_data = json.load(f)
 
-        # 提取第一个HTTP事务条目
-        entry = har_data['log']['entries'][0]
-        request_info = entry['request']
+        entries_list = har_data['log']['entries']
+        if not entries_list:
+            logger.error(f"HAR文件 '{har_file_path}' 的 'entries' 列表为空。")
+            return None
+        
+        first_entry = entries_list[0]
+        
+        request_info = first_entry['request']
 
-        # 提取请求方法和URL
         method = request_info['method']
         url = request_info['url']
-
-        # 提取请求头
         headers = {header['name']: header['value'] for header in request_info['headers']}
 
-        # 提取请求体（如果存在）
         post_data = None
         if 'postData' in request_info:
-            mime_type = request_info['postData'].get('mimeType', '')
-            text = request_info['postData'].get('text', '')
+            post_data_info = request_info['postData']
+            mime_type = post_data_info.get('mimeType', '')
+            text = post_data_info.get('text', '')
+            encoding = post_data_info.get('encoding', '')
 
-            # 根据MIME类型处理请求体
-            if 'application/json' in mime_type:
+            if encoding == 'base64':
+                try:
+                    post_data = base64.b64decode(text)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"无法对请求体进行Base64解码: {text} - 错误: {e}")
+                    post_data = text # 解码失败时回退
+            elif 'application/json' in mime_type:
                 try:
                     post_data = json.loads(text)
                 except json.JSONDecodeError:
                     logger.error(f"无法将请求体解码为JSON: {text}")
-                    post_data = text # 如果解码失败，则作为原始文本
+                    post_data = text
             else:
                 post_data = text
         
-        logger.info(f"成功解析HAR文件: {har_file_path}")
-        return {
+        request_details = {
             'method': method,
             'url': url,
             'headers': headers,
             'post_data': post_data
         }
 
+        logger.debug(f"成功解析HAR文件: {har_file_path}")
+        logger.debug(f"解析出的请求详情: {json.dumps(request_details, indent=2, ensure_ascii=False)}")
+        return request_details
+
     except FileNotFoundError:
         logger.error(f"HAR文件未找到: {har_file_path}")
         return None
     except (KeyError, IndexError) as e:
-        logger.error(f"解析HAR文件时出错: {har_file_path}。无效的HAR结构: {e}")
+        logger.error(f"解析HAR文件时出错: {har_file_path}。无效的HAR结构或'entries'列表为空: {e}")
         return None
     except Exception as e:
-        logger.error(f"解析HAR文件时发生未知错误: {har_file_path}。错误: {e}")
+        logger.error(f"解析HAR文件时发生未知错误: {har_file_path}。错误: {e}", exc_info=True)
         return None
