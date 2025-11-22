@@ -8,7 +8,7 @@ from request_sender import send_request
 
 # --- 全局配置 ---
 # 是否开启调试模式。True: 记录详细请求和响应信息; False: 只记录基本信息。
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 # 初始化日志系统
 logger = setup_logger(debug=DEBUG_MODE)
