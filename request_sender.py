@@ -52,7 +52,6 @@ def send_request(request_details):
                 logger.debug(f"响应内容 (JSON): \n{json.dumps(response_json, indent=2, ensure_ascii=False)}")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 logger.debug(f"响应内容 (原始): {response_body}")
-                logger.info(f"响应内容 (预览): {response_body[:100]}...")
             return True
         else:
             logger.warning(f"请求失败: {method} {url} - 状态码: {resp.status}")
