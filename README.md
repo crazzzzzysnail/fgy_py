@@ -15,11 +15,7 @@
 ```
 .
 ├── har/
-│   ├── reward.har
-│   ├── task1.har
-│   ├── task3.har
-│   ├── task5.har
-│   └── task10.har
+│   └── *.har
 ├── main.py             # 主程序入口
 ├── tasks.json          # 任务配置文件
 ├── har_parser.py       # HAR文件解析器模块
