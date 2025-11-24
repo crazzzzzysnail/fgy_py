@@ -10,8 +10,11 @@ from request_sender import send_request
 # 是否开启调试模式。True: 记录详细请求和响应信息; False: 只记录基本信息。
 DEBUG_MODE = False
 
+# 是否开启控制台简洁模式。True: 控制台只输出关键信息; False: 控制台输出所有信息。
+CONSOLE_CONCISE_MODE = True
+
 # 初始化日志系统
-logger = setup_logger(debug=DEBUG_MODE)
+logger = setup_logger(debug=DEBUG_MODE, concise_mode=CONSOLE_CONCISE_MODE)
 
 # 脚本根目录，用于构建绝对路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -161,10 +164,10 @@ def main():
         hours, minutes = divmod(total_reward_minutes, 60)
         total_reward_time = f"{hours}小时{minutes}分钟"
 
-        logger.info("************************************************")
-        logger.info("*************** 获得3天VIP，65分钟时长 ***************")
+        logger.info("****************************************************")
+        logger.info("**************** 获得3天VIP，65分钟时长 ****************")
         logger.info(f"*** 成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***")
-        logger.info("************************************************")
+        logger.info("****************************************************")
     elif any_task_failed:
         logger.warning("一个或多个任务执行失败或未完全成功，请检查以上日志获取详细信息。")
         logger.info(f"本次运行前已累计成功签到 {total_successful_days} 天，本次运行未增加天数。")
