@@ -5,36 +5,26 @@ import concurrent.futures
 from logger_setup import setup_logger
 from har_parser import parse_har
 from request_sender import send_request
-
-# --- 全局配置 ---
-# 是否开启调试模式。True: 记录详细请求和响应信息; False: 只记录基本信息。
-DEBUG_MODE = False
-
-# 是否开启控制台简洁模式。True: 控制台只输出关键信息; False: 控制台输出所有信息。
-CONSOLE_CONCISE_MODE = True
+from notify import send_notification
+import config
 
 # 初始化日志系统
-logger = setup_logger(debug=DEBUG_MODE, concise_mode=CONSOLE_CONCISE_MODE)
-
-# 脚本根目录，用于构建绝对路径
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TASKS_FILE = os.path.join(BASE_DIR, 'tasks.json')
-STATUS_FILE = os.path.join(BASE_DIR, 'status.json')
+logger = setup_logger()
 
 def load_tasks():
     """
     从tasks.json加载任务列表。
     """
     try:
-        with open(TASKS_FILE, 'r', encoding='utf-8') as f:
+        with open(config.TASKS_FILE, 'r', encoding='utf-8') as f:
             tasks = json.load(f)
         logger.info("成功加载任务配置文件。")
         return tasks
     except FileNotFoundError:
-        logger.error(f"任务配置文件未找到: {TASKS_FILE}")
+        logger.error(f"任务配置文件未找到: {config.TASKS_FILE}")
         return []
     except json.JSONDecodeError:
-        logger.error(f"任务配置文件格式错误: {TASKS_FILE}")
+        logger.error(f"任务配置文件格式错误: {config.TASKS_FILE}")
         return []
 
 
@@ -43,7 +33,7 @@ def load_status():
     从status.json加载状态信息，主要是成功签到天数。
     """
     try:
-        with open(STATUS_FILE, 'r', encoding='utf-8') as f:
+        with open(config.STATUS_FILE, 'r', encoding='utf-8') as f:
             status = json.load(f)
         return status.get('successful_days', 0)
     except (FileNotFoundError, json.JSONDecodeError):
@@ -54,7 +44,7 @@ def save_status(successful_days):
     """
     将更新后的状态信息（成功签到天数）保存到status.json。
     """
-    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+    with open(config.STATUS_FILE, 'w', encoding='utf-8') as f:
         json.dump({'successful_days': successful_days}, f, indent=4)
 
 
@@ -67,46 +57,35 @@ def format_duration(seconds):
         return f"{seconds:.2f}秒"
 
 
-def run_task(task):
+def _send_request_with_retry(task_name, request_details, current_count, total_count):
     """
-    执行单个任务，此函数将在单独的线程中运行。
+    发送单个请求，包含重试逻辑。
+    返回 True 表示成功，False 表示失败。
+    """
+    max_retries = 3
+    for attempt in range(max_retries):
+        if send_request(request_details):
+            return True
+        else:
+            logger.warning(f"任务 '{task_name}' 第 {current_count}/{total_count} 次发送失败 (尝试 {attempt + 1}/{max_retries})。")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # 重试前等待1秒
+    
+    logger.error(f"任务 '{task_name}' 第 {current_count}/{total_count} 次发送连续失败 {max_retries} 次。")
+    return False
+
+def run_task(task_name, request_details, count, interval):
+    """
+    执行单个任务的核心逻辑，此函数将在单独的线程中运行。
     """
     task_start_time = time.time()
-    task_name = task.get('name', '未命名任务')
-    har_file = os.path.join(BASE_DIR, task.get('har_file', ''))
-    count = task.get('count', 1)
-    interval = task.get('interval_seconds', 0)
-
     logger.info(f"--- [线程开始] 任务: {task_name} ---")
 
-    if not har_file or not os.path.exists(har_file):
-        logger.error(f"任务 '{task_name}' 的HAR文件未找到或未配置: {har_file}")
-        return False
-
-    request_details = parse_har(har_file)
-    if not request_details:
-        logger.error(f"无法为任务 '{task_name}' 解析HAR文件，跳过此任务。")
-        return False
-
-    task_fully_successful = True
     for i in range(count):
         logger.info(f"任务 '{task_name}': 正在进行第 {i + 1}/{count} 次发送。")
         
-        max_retries = 3
-        request_successful = False
-        for attempt in range(max_retries):
-            if send_request(request_details):
-                request_successful = True
-                break
-            else:
-                logger.warning(f"任务 '{task_name}' 第 {i + 1}/{count} 次发送失败 (尝试 {attempt + 1}/{max_retries})。")
-                if attempt < max_retries - 1:
-                    time.sleep(1)  # 重试前等待1秒
-
-        if not request_successful:
-            logger.error(f"任务 '{task_name}' 第 {i + 1}/{count} 次发送连续失败 {max_retries} 次。中止此任务。")
-            task_fully_successful = False
-            break  # 中止当前任务的后续发送
+        if not _send_request_with_retry(task_name, request_details, i + 1, count):
+            return False  # 如果请求失败，则中止整个任务
 
         if i < count - 1 and interval > 0:
             logger.info(f"任务 '{task_name}': 等待 {interval} 秒...")
@@ -114,8 +93,43 @@ def run_task(task):
     
     duration = time.time() - task_start_time
     logger.info(f"--- [线程结束] 任务: {task_name} 执行完毕, 耗时: {format_duration(duration)} ---")
-    return task_fully_successful
+    return True
 
+def _handle_final_notification(any_task_failed, total_successful_days, current_run_successful_tasks):
+    """处理最终的成功或失败通知。"""
+    if not any_task_failed and current_run_successful_tasks > 0:
+        total_successful_days += 1
+        save_status(total_successful_days)
+        
+        total_reward_days = 3 * total_successful_days
+        total_reward_minutes = 65 * total_successful_days
+        hours, minutes = divmod(total_reward_minutes, 60)
+        total_reward_time = f"{hours}小时{minutes}分钟"
+
+        logger.info("****************************************************")
+        logger.info("**************** 获得3天VIP，65分钟时长 ****************")
+        logger.info(f"*** 成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***")
+        logger.info("****************************************************")
+
+        # 发送成功通知
+        success_title = "签到任务成功"
+        success_content = (
+            f"获得3天VIP，65分钟时长。\n"
+            f"成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长。"
+        )
+        send_notification(success_title, success_content)
+
+    elif any_task_failed:
+        logger.warning("一个或多个任务执行失败或未完全成功，请检查日志获取详细信息。")
+        logger.info(f"本次运行前已累计成功签到 {total_successful_days} 天，本次运行未增加天数。")
+        
+        # 发送失败通知
+        fail_title = "签到任务失败"
+        fail_content = "一个或多个任务执行失败或未完全成功，请检查日志获取详细信息。"
+        send_notification(fail_title, fail_content)
+
+    else:
+        logger.info("本次运行没有成功完成任何任务。")
 
 def main():
     """
@@ -137,45 +151,46 @@ def main():
     current_run_successful_tasks = 0
     any_task_failed = False
 
+    # --- 准备并提交任务 ---
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-        future_to_task = {executor.submit(run_task, task): task for task in tasks}
-        
-        for future in concurrent.futures.as_completed(future_to_task):
-            task = future_to_task[future]
+        future_to_task_name = {}
+        for task in tasks:
+            task_name = task.get('name', '未命名任务')
+            har_file = os.path.join(config.BASE_DIR, task.get('har_file', ''))
+            
+            if not har_file or not os.path.exists(har_file):
+                logger.error(f"任务 '{task_name}' 的HAR文件未找到或未配置: {har_file}，跳过此任务。")
+                any_task_failed = True
+                continue
+
+            request_details = parse_har(har_file)
+            if not request_details:
+                logger.error(f"无法为任务 '{task_name}' 解析HAR文件，跳过此任务。")
+                any_task_failed = True
+                continue
+            
+            count = task.get('count', 1)
+            interval = task.get('interval_seconds', 0)
+            
+            future = executor.submit(run_task, task_name, request_details, count, interval)
+            future_to_task_name[future] = task_name
+
+        # --- 处理任务结果 ---
+        for future in concurrent.futures.as_completed(future_to_task_name):
+            task_name = future_to_task_name[future]
             try:
-                is_successful = future.result()
-                if is_successful:
+                if future.result():
                     current_run_successful_tasks += 1
                 else:
                     any_task_failed = True
             except Exception as exc:
                 any_task_failed = True
-                logger.error(f"任务 '{task.get('name')}' 在执行期间产生异常: {exc}", exc_info=DEBUG_MODE)
+                logger.error(f"任务 '{task_name}' 在执行期间产生异常: {exc}", exc_info=config.DEBUG_MODE)
 
     total_duration = time.time() - overall_start_time
     logger.info(f"所有发送任务已完成。总耗时: {format_duration(total_duration)}")
 
-    if not any_task_failed and current_run_successful_tasks > 0:
-        total_successful_days += 1
-        save_status(total_successful_days)
-        
-        total_reward_days = 3 * total_successful_days
-        total_reward_minutes = 65 * total_successful_days
-        hours, minutes = divmod(total_reward_minutes, 60)
-        total_reward_time = f"{hours}小时{minutes}分钟"
-
-        logger.info("****************************************************")
-        logger.info("**************** 获得3天VIP，65分钟时长 ****************")
-        logger.info(f"*** 成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***")
-        logger.info("****************************************************")
-    elif any_task_failed:
-        logger.warning("一个或多个任务执行失败或未完全成功，请检查以上日志获取详细信息。")
-        logger.info(f"本次运行前已累计成功签到 {total_successful_days} 天，本次运行未增加天数。")
-    else:
-        logger.info("本次运行没有成功完成任何任务。")
-        #调用青龙面板notify()发送wxpusher通知
-        #print(QLAPI.notify("签到任务", "成功签到{total_successful_days}天，累计获得{total_reward_days}天VIP，{total_reward_time}时长 ***"))
-
+    _handle_final_notification(any_task_failed, total_successful_days, current_run_successful_tasks)
 
     logger.info(f"================ 自动化任务结束 (总耗时: {format_duration(total_duration)}) ================")
 
