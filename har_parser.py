@@ -20,6 +20,15 @@ def _parse_post_data(post_data_info):
     # 如果是JSON，则直接返回文本，让请求发送者处理序列化
     if 'application/json' in mime_type:
         return text
+    
+    # 如果是二进制流且没有指定编码（通常意味着是latin-1编码的字符串），尝试将其转换为bytes
+    if 'application/octet-stream' in mime_type:
+        try:
+            # HAR文件中的二进制数据如果作为字符串存储，通常是Latin-1编码
+            return text.encode('latin1')
+        except UnicodeEncodeError:
+            logger.warning(f"尝试将application/octet-stream数据编码为latin1失败，回退到原始文本。")
+            return text
         
     return text
 
