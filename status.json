@@ -1,3 +1,7 @@
 {
-    "successful_days": 0
+    "successful_days": 0,
+    "last_run_status": "",
+    "last_run_time": "",
+    "reward_days": 0,
+    "reward_minutes": ""
 }
