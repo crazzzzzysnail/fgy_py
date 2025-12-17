@@ -12,7 +12,11 @@ def _load_env_once():
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
-                    env_config[key.strip()] = value.strip()
+                    value = value.strip()
+                    # 自动去除值两端的引号 (单引号或双引号)
+                    if len(value) >= 2 and value[0] in ('"', "'") and value[0] == value[-1]:
+                        value = value[1:-1]
+                    env_config[key.strip()] = value
     return env_config
 
 # 在模块加载时执行一次，将结果缓存到 _env_cache 中
@@ -50,3 +54,15 @@ WXPUSHER_UIDS = get_config('WXPUSHER_UIDS')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TASKS_FILE = os.path.join(BASE_DIR, 'tasks.json')
 STATUS_FILE = os.path.join(BASE_DIR, 'status.json')
+
+# --- 奖励规则配置 ---
+# 定义奖励计算规则，key 为变量名，value 为计算表达式 (字符串)
+# 表达式中可以使用 'days' 代表 successful_days
+REWARD_RULES = {
+    "reward_days": "days * 3",
+    "reward_minutes": "format_minutes(days * 65)"
+}
+
+# HTML报告顶部的汇总显示模板
+# 可以使用 {successful_days} 以及 REWARD_RULES 中定义的变量
+# SUMMARY_TEMPLATE = "累计签到: {successful_days}天 (获得 {reward_days}天, 时长 {reward_minutes})"

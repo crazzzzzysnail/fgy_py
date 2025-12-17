@@ -32,18 +32,21 @@ def _parse_post_data(post_data_info):
         
     return text
 
-def parse_har(har_file_path):
+def parse_har(har_file_path: str) -> list[dict] | None:
     """
-    解析HAR文件，提取第一个有效的HTTP请求条目。
+    解析HAR文件，提取所有有效的HTTP请求条目。
 
     :param har_file_path: HAR文件的路径。
-    :return: 包含请求信息的字典，如果解析失败则返回None。
+    :return: 包含请求信息字典的列表，如果解析失败或无有效请求则返回None。
     """
     try:
         with open(har_file_path, 'r', encoding='utf-8') as f:
             har_data = json.load(f)
 
-        for entry in har_data.get('log', {}).get('entries', []):
+        requests_list = []
+        entries = har_data.get('log', {}).get('entries', [])
+        
+        for entry in entries:
             request_info = entry.get('request')
             if not request_info:
                 continue
@@ -51,14 +54,25 @@ def parse_har(har_file_path):
             # 提取核心请求信息
             method = request_info.get('method')
             url = request_info.get('url')
-            headers = {header['name']: header['value'] for header in request_info.get('headers', [])}
+            # 过滤掉以 : 开头的伪头 (如 :method, :path 等，常见于 HTTP/2 HAR)
+            headers = {
+                header['name']: header['value']
+                for header in request_info.get('headers', [])
+                if not header['name'].startswith(':')
+            }
 
             # 如果缺少方法或URL，则跳过此条目
             if not method or not url:
                 continue
 
+            # 忽略静态资源请求 (可选优化，防止请求图片/CSS等)
+            # 这里简单过滤常见静态资源后缀
+            path = url.split('?')[0].lower()
+            if path.endswith(('.png', '.jpg', '.jpeg', '.gif', '.css', '.js', '.ico', '.woff', '.ttf')):
+                continue
+
             post_data = None
-            if 'postData' in request_info:
+            if request_info.get('postData'):
                 post_data = _parse_post_data(request_info['postData'])
             
             request_details = {
@@ -67,13 +81,16 @@ def parse_har(har_file_path):
                 'headers': headers,
                 'post_data': post_data
             }
+            requests_list.append(request_details)
 
-            logger.debug(f"成功从 '{har_file_path}' 解析出请求。")
-            logger.debug(f"解析出的请求详情: {json.dumps(request_details, indent=2, ensure_ascii=False, default=lambda o: '<bytes>' if isinstance(o, bytes) else str(o))}")
-            return request_details
-
-        logger.error(f"在HAR文件 '{har_file_path}' 中未找到有效的请求条目。")
-        return None
+        if requests_list:
+            logger.debug(f"成功从 '{har_file_path}' 解析出 {len(requests_list)} 个请求。")
+            # 仅打印第一个请求作为示例，避免日志过长
+            logger.debug(f"第一个请求详情: {json.dumps(requests_list[0], indent=2, ensure_ascii=False, default=lambda o: '<bytes>' if isinstance(o, bytes) else str(o))}")
+            return requests_list
+        else:
+            logger.error(f"在HAR文件 '{har_file_path}' 中未找到有效的请求条目。")
+            return None
 
     except FileNotFoundError:
         logger.error(f"HAR文件未找到: {har_file_path}")
