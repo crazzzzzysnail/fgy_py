@@ -72,7 +72,7 @@ def parse_har(har_file_path: str) -> list[dict] | None:
                 continue
 
             post_data = None
-            if 'postData' in request_info:
+            if request_info.get('postData'):
                 post_data = _parse_post_data(request_info['postData'])
             
             request_details = {
